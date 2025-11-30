@@ -1,0 +1,1250 @@
+<!DOCTYPE html>
+<html lang="ja">
+
+<head>
+	<meta charset="UTF-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+	<title>Markdown Preview</title>
+	<script src="https://cdnjs.cloudflare.com/ajax/libs/marked/9.1.6/marked.min.js"></script>
+	<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+	<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github.min.css">
+	<script src="https://cdn.jsdelivr.net/npm/marked-footnote@1.4.0/dist/index.umd.min.js"></script>
+	<script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.4.8/purify.min.js"></script>
+	<!-- Mermaid は ESM のみ提供のため type="module" で読み込む。
+	     非同期ロードのため window.mermaid へ代入し、
+	     window.mermaidReady（Promise）でロード完了を後続コードへ通知する。
+	     startOnLoad:false にして、描画タイミングは updatePreview 側で制御する。 -->
+	<script type="module">
+		import mermaid from "https://cdn.jsdelivr.net/npm/mermaid@11.16.0/dist/mermaid.esm.min.mjs";
+
+		mermaid.initialize({ startOnLoad: false, theme: 'default' });
+		window.mermaid = mermaid;
+		window.dispatchEvent(new Event('mermaid:ready'));
+	</script>
+	<script>
+		// mermaid ロード完了を待つための Promise。updatePreview から参照する。
+		window.mermaidReady = new Promise((resolve) => {
+			if (window.mermaid) { resolve(window.mermaid); return; }
+			window.addEventListener('mermaid:ready', () => resolve(window.mermaid), { once: true });
+		});
+	</script>
+	<style>
+		* {
+			box-sizing: border-box;
+		}
+
+		body {
+			margin: 0;
+			padding: 0;
+			font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans', Helvetica, Arial, sans-serif;
+			font-size: 14px;
+			line-height: 1.6;
+			background: #ffffff;
+			color: #24292f;
+			display: flex;
+			flex-direction: column;
+			height: 100vh;
+			overflow: hidden;
+		}
+
+		.container {
+			display: flex;
+			width: 100%;
+			flex: 1;
+			min-height: 0;
+		}
+
+		.editor-pane {
+			flex: 1;
+			display: grid;
+			grid-template-columns: 60px 1fr;
+			gap: 0;
+			border-right: 1px solid #d0d7de;
+			position: relative;
+			min-height: 0;
+		}
+
+		.preview-pane {
+			flex: 1;
+			overflow-y: auto;
+			background: #ffffff;
+		}
+
+		/* .toolbar — removed (moved to full-width menubar above editor) */
+		/* .toolbar button — same */
+		/* .toolbar button:hover — same */
+
+		/* Line numbers */
+		#line-numbers {
+			width: auto;
+			background: #f6f8fa;
+			border-right: 1px solid #d0d7de;
+			padding: 20px 0;
+			font-family: 'Consolas', 'Courier New', monospace;
+			font-size: 14px;
+			line-height: 1.6;
+			text-align: right;
+			overflow-y: hidden;
+			user-select: none;
+			color: #57606a;
+			flex-shrink: 0;
+			box-sizing: border-box;
+		}
+
+		#line-numbers .line-number {
+			padding-right: 12px;
+			display: block;
+			height: 1.6em;
+			box-sizing: border-box;
+		}
+
+		/* Full-width top menu bar */
+		.menubar {
+			width: 100%;
+			background: #f6f8fa;
+			border-bottom: 1px solid #d0d7de;
+			display: flex;
+			align-items: center;
+			justify-content: space-between;
+			height: 41px;
+			padding: 0 24px;
+			gap: 24px;
+			box-sizing: border-box;
+			flex-shrink: 0;
+			z-index: 100;
+		}
+
+		@media (max-width: 768px) {
+			.menubar {
+				display: none;
+			}
+		}
+
+		.menubar-brand {
+			font-weight: 600;
+			color: #2f363d;
+			font-size: 14px;
+			white-space: nowrap;
+			flex-shrink: 0;
+			letter-spacing: -0.01em;
+			user-select: none;
+		}
+
+		.menubar-export button {
+			background: #2da44e;
+			color: #ffffff;
+			border: 0;
+			padding: 7px 18px;
+			border-radius: 6px;
+			cursor: pointer;
+			font-size: 14px;
+			font-family: inherit;
+			font-weight: 500;
+			line-height: 1;
+			white-space: nowrap;
+			margin: 0;
+			box-shadow: inset 0 1px 0 rgba(255, 255, 255, .3);
+			text-shadow: 0 -1px 1px rgba(0, 0, 0, .25);
+		}
+
+		.menubar-export button:hover {
+			background: #2c974b;
+		}
+
+		textarea {
+			flex: 1;
+			background: #ffffff;
+			color: #24292f;
+			border: none;
+			padding: 20px;
+			font-family: 'Consolas', 'Courier New', monospace;
+			font-size: 14px;
+			line-height: 1.6;
+			resize: none;
+			outline: none;
+			width: 100%;
+			height: 100%;
+			overflow-y: auto;
+		}
+
+		.preview-content {
+			padding: 32px;
+			max-width: 1012px;
+		}
+
+		/* GitHub Markdown Styles */
+		.preview-content h1,
+		.preview-content h2,
+		.preview-content h3,
+		.preview-content h4,
+		.preview-content h5,
+		.preview-content h6 {
+			font-weight: 600;
+			line-height: 1.25;
+			margin-top: 24px;
+			margin-bottom: 16px;
+		}
+
+		.preview-content h1 {
+			font-size: 2em;
+			border-bottom: 1px solid #d8dee4;
+			padding-bottom: 0.3em;
+			margin-top: 0;
+		}
+
+		.preview-content h2 {
+			font-size: 1.5em;
+			border-bottom: 1px solid #d8dee4;
+			padding-bottom: 0.3em;
+		}
+
+		.preview-content h3 {
+			font-size: 1.25em;
+		}
+
+		.preview-content h4 {
+			font-size: 1em;
+		}
+
+		.preview-content h5 {
+			font-size: 0.875em;
+		}
+
+		.preview-content h6 {
+			font-size: 0.85em;
+			color: #57606a;
+		}
+
+		.preview-content p {
+			margin-top: 0;
+			margin-bottom: 16px;
+		}
+
+		.preview-content code {
+			background: rgba(175, 184, 193, 0.2);
+			padding: 0.2em 0.4em;
+			border-radius: 6px;
+			font-family: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace;
+			font-size: 85%;
+			color: #24292f;
+		}
+
+		.preview-content pre {
+			background: #f6f8fa;
+			padding: 16px;
+			border-radius: 6px;
+			overflow-x: auto;
+			margin: 16px 0;
+			border: 1px solid #d0d7de;
+			line-height: 1.45;
+		}
+
+		.preview-content pre code {
+			background: none;
+			padding: 0;
+			border-radius: 0;
+			font-size: 100%;
+			color: #24292f;
+			display: block;
+		}
+
+		.preview-content pre code.hljs {
+			background: transparent;
+			padding: 0;
+		}
+
+		.preview-content blockquote {
+			margin: 0 0 16px 0;
+			padding: 0 1em;
+			border-left: 0.25em solid #d0d7de;
+			color: #57606a;
+		}
+
+		.preview-content ul,
+		.preview-content ol {
+			padding-left: 2em;
+			margin-top: 0;
+			margin-bottom: 16px;
+		}
+
+		.preview-content li {
+			margin-top: 0.25em;
+			position: relative;
+		}
+
+		.preview-content li+li {
+			margin-top: 0.25em;
+		}
+
+		.preview-content a {
+			color: #0969da;
+			text-decoration: none;
+		}
+
+		.preview-content a:hover {
+			text-decoration: underline;
+		}
+
+		.preview-content img {
+			max-width: 100%;
+			height: auto;
+			background-color: #ffffff;
+		}
+
+		.preview-content table {
+			border-collapse: collapse;
+			border-spacing: 0;
+			width: auto;
+			margin: 16px 0;
+		}
+
+		.preview-content table th,
+		.preview-content table td {
+			border: 1px solid #d0d7de;
+			padding: 6px 13px;
+		}
+
+		.preview-content table th {
+			background: #f6f8fa;
+			font-weight: 600;
+		}
+
+		.preview-content table tr {
+			background: #ffffff;
+			border-top: 1px solid #d0d7de;
+		}
+
+		.preview-content table tr:nth-child(2n) {
+			background: #f6f8fa;
+		}
+
+		.preview-content hr {
+			border: none;
+			border-bottom: 1px solid #d8dee4;
+			height: 0.25em;
+			background: transparent;
+			margin: 24px 0;
+		}
+
+		.preview-content strong {
+			font-weight: 600;
+		}
+
+		.preview-content em {
+			font-style: italic;
+		}
+
+		.preview-content del {
+			text-decoration: line-through;
+		}
+
+		.preview-content input[type="checkbox"] {
+			appearance: none;
+			width: 16px;
+			height: 16px;
+			margin: 0 0 0 0;
+			border: 1px solid #d0d7de;
+			border-radius: 4px;
+			background-color: #ffffff;
+			position: relative;
+			top: 2px;
+			cursor: pointer;
+		}
+
+		.preview-content input[type="checkbox"]:checked {
+			background-color: #0969da;
+			border-color: #0969da;
+			background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 16 16' fill='%23ffffff' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M12.207 4.793a1 1 0 010 1.414l-5 5a1 1 0 01-1.414 0l-2-2a1 1 0 011.414-1.414L6.5 9.086l4.293-4.293a1 1 0 011.414 0z'/%3E%3C/svg%3E");
+			background-size: 16px;
+			background-position: center;
+			background-repeat: no-repeat;
+		}
+
+		.preview-content li input[type="checkbox"] {
+			position: absolute;
+			left: -24px;
+			top: 4px;
+		}
+
+		/* GitHub Alerts */
+		.preview-content .markdown-alert {
+			padding: 8px 16px;
+			margin-bottom: 16px;
+			border-left: 4px solid;
+			border-radius: 0;
+		}
+
+		.preview-content .markdown-alert>*:last-child {
+			margin-bottom: 0;
+		}
+
+		.preview-content .markdown-alert-note {
+			border-color: #0969da;
+		}
+
+		.preview-content .markdown-alert-tip {
+			border-color: #1a7f37;
+		}
+
+		.preview-content .markdown-alert-important {
+			border-color: #8250df;
+		}
+
+		.preview-content .markdown-alert-warning {
+			border-color: #9a6700;
+		}
+
+		.preview-content .markdown-alert-caution {
+			border-color: #d1242f;
+		}
+
+		.preview-content .markdown-alert-title {
+			display: flex;
+			align-items: center;
+			font-weight: 500;
+			font-size: 14px;
+			margin-bottom: 8px;
+			line-height: 1;
+		}
+
+		.preview-content .markdown-alert-note .markdown-alert-title {
+			color: #0969da;
+		}
+
+		.preview-content .markdown-alert-tip .markdown-alert-title {
+			color: #1a7f37;
+		}
+
+		.preview-content .markdown-alert-important .markdown-alert-title {
+			color: #8250df;
+		}
+
+		.preview-content .markdown-alert-warning .markdown-alert-title {
+			color: #9a6700;
+		}
+
+		.preview-content .markdown-alert-caution .markdown-alert-title {
+			color: #d1242f;
+		}
+
+		.preview-content .markdown-alert-title .alert-icon {
+			margin-right: 8px;
+			display: inline-block;
+			width: 16px;
+			height: 16px;
+		}
+
+		/* Collapsible Details/Summary */
+		.preview-content details {
+			margin-bottom: 16px;
+		}
+
+		.preview-content summary {
+			cursor: pointer;
+		}
+
+		/* Footnote */
+		[data-footnoteref] {
+			color: #0969da;
+			text-decoration: none;
+		}
+
+		[data-footnoteref]:hover {
+			text-decoration: underline;
+		}
+
+		[data-footnoteref]::before {
+			content: '[';
+		}
+
+		[data-footnoteref]::after {
+			content: ']';
+		}
+
+		.footnotes {
+			margin-top: 24px;
+			padding-top: 24px;
+			border-top: 1px solid #d8dee4;
+			font-size: 0.85em;
+			color: #57606a;
+		}
+
+		.footnotes ol {
+			list-style-type: none;
+			padding-left: 0;
+			margin: 0;
+			counter-reset: footnote-counter;
+		}
+
+		.footnotes ol li {
+			counter-increment: footnote-counter;
+			margin-bottom: 8px;
+			position: relative;
+			padding-left: 1.5em;
+		}
+
+		.footnotes ol li::before {
+			content: counter(footnote-counter) ". ";
+			position: absolute;
+			left: 0;
+			font-weight: 600;
+		}
+
+		.footnotes ol li p {
+			margin: 0;
+			display: inline;
+		}
+
+		[data-footnotebackref] {
+			color: #0969da;
+			text-decoration: none;
+			font-size: 0.8em;
+			vertical-align: super;
+			margin-left: 4px;
+		}
+
+		[data-footnotebackref]:hover {
+			text-decoration: underline;
+		}
+
+		.sr-only {
+			position: absolute;
+			width: 1px;
+			height: 1px;
+			padding: 0;
+			overflow: hidden;
+			clip: rect(0, 0, 0, 0);
+			word-wrap: normal;
+			border: 0;
+		}
+
+		/* Mermaid diagrams */
+		.preview-content .mermaid {
+			background: transparent;
+			border: none;
+			padding: 0;
+			margin: 16px 0;
+			text-align: center;
+			overflow-x: auto;
+			line-height: normal;
+		}
+
+		.preview-content .mermaid svg {
+			max-width: 100%;
+			height: auto;
+		}
+	</style>
+</head>
+
+<body>
+	<nav class="menubar">
+		<span class="menubar-brand">Markdown Preview</span>
+		<div class="menubar-export"><button type="button" onclick="exportHTML()">Export (HTML)</button></div>
+	</nav>
+	<div class="container">
+		<div class="editor-pane">
+			<div id="line-numbers"></div>
+			<textarea id="markdown-input" placeholder="ここにMarkdownを入力してください...">
+# タイトル
+
+これはサンプルです。
+
+## 機能
+
+- **太字**や*斜体*のテキスト
+- `インラインコード`
+- リンク: [GitHub](https://github.com)
+
+### リスト
+
+1. 番号付きリスト
+2. 2つ目の項目
+3. 3つ目の項目
+
+- 箇条書き
+  - もう一つの項目
+
+### 引用
+
+> これは引用です。
+> GitHubのプレビューと同じスタイルになっています。
+
+### テーブル
+
+| 左寄せ | 中央 | 右寄せ |
+| :------- | :-------: | -------: |
+| 1   | 2   | 3 |
+| A   | B   | C |
+
+### チェックボックス
+
+- [x] チェックボックス
+- [ ] 未チェックボックス
+
+### サマリー
+
+<details>
+<summary>ココをクリック</summary>
+詳細テキスト
+</details>
+
+### ライン
+
+---
+
+### アラート
+
+> [!NOTE]
+> ユーザーがコンテンツを読み飛ばしている場合でも知っておくべき有用な情報。
+
+> [!TIP]
+> 物事をより良く、またはより簡単に行うための役立つアドバイス。
+
+> [!IMPORTANT]
+> ユーザーが目標を達成するために知っておく必要がある重要な情報。
+
+> [!WARNING]
+> 問題を回避するために、ユーザーの即座の注意が必要な緊急情報。
+
+> [!CAUTION]
+> 特定のアクションのリスクまたはマイナスの結果についての警告。
+
+> [!NOTE]
+> アラート内でも `インラインコード` やコードブロックが正しく表示されます。
+>
+> ```javascript
+> console.log("alert 内のコードブロック");
+> ```
+
+### コードブロック
+
+```javascript
+function hello() {
+    console.log("Hello, World!");
+}
+```
+
+```python
+def greet(name):
+    return f"Hello, {name}!"
+
+print(greet("World"))
+```
+
+### 図（Mermaid）
+
+```mermaid
+flowchart LR
+    A[開始] --> B{条件分岐}
+    B -->|Yes| C[処理1]
+    B -->|No| D[処理2]
+    C --> E[終了]
+    D --> E
+```
+
+```mermaid
+sequenceDiagram
+    participant U as ユーザー
+    participant S as サーバー
+    U->>S: リクエスト
+    S-->>U: レスポンス
+```
+
+### フットノート
+
+これは脚注付きの文章です[^1]
+
+[^1]: これが脚注の内容です。
+
+		</textarea>
+		</div>
+		<div class="preview-pane">
+			<div class="preview-content" id="preview"></div>
+		</div>
+	</div>
+
+	<script>
+		// フットノート
+		marked.use(markedFootnote());
+		marked.setOptions({
+			breaks: true,
+			gfm: true
+		});
+
+		// Mermaid 用の code レンダラー。
+		// 言語指定が「mermaid」のフェンスコードブロックのみ <pre class="mermaid"> に変換する。
+		// 中身は mermaid ソースを HTML エスケープして入れる。
+		// （mermaid.run() は要素の innerHTML を entityDecode して読むため、
+		//  --> や < を含む図でも壊れないようエスケープ済みで保持するのが正しい。
+		//  DOMPurify もエスケープ済みテキストなら安全に通過させる。）
+		// mermaid 以外は false を返し、marked のデフォルト code レンダラーへ委譲する
+		// （marked.use のフォールバック機構）。これで既存のコードブロック表示・
+		// シンタックスハイライト（pre code セレクタ）の挙動を一切変えない。
+		marked.use({
+			renderer: {
+				code(code, infostring) {
+					const lang = (infostring || '').match(/^\S*/)[0];
+					if (lang === 'mermaid') {
+						return `<pre class="mermaid">${escapeHtml(code)}</pre>\n`;
+					}
+					return false;
+				}
+			}
+		});
+
+		// GitHubアラート記法（> [!NOTE] 等）の定義。SVG アイコン・CSS クラス・ラベルを持つ。
+		const ALERT_TYPES = {
+			NOTE: {
+				icon: '<svg class="alert-icon" viewBox="0 0 16 16" fill="currentColor"><path d="M0 8a8 8 0 1 1 16 0A8 8 0 0 1 0 8Zm8-6.5a6.5 6.5 0 1 0 0 13 6.5 6.5 0 0 0 0-13ZM6.5 7.75A.75.75 0 0 1 7.25 7h1a.75.75 0 0 1 .75.75v2.75h.25a.75.75 0 0 1 0 1.5h-2a.75.75 0 0 1 0-1.5h.25v-2h-.25a.75.75 0 0 1-.75-.75ZM8 6a1 1 0 1 1 0-2 1 1 0 0 1 0 2Z"></path></svg>',
+				class: 'note',
+				label: 'Note'
+			},
+			TIP: {
+				icon: '<svg class="alert-icon" viewBox="0 0 16 16" fill="currentColor"><path d="M8 1.5c-2.363 0-4 1.69-4 3.75 0 .984.424 1.625.984 2.304l.214.253c.223.264.47.556.673.848.284.411.537.896.621 1.49a.75.75 0 0 1-1.484.211c-.04-.282-.163-.547-.37-.847a8.456 8.456 0 0 0-.542-.68c-.084-.1-.173-.205-.268-.32C3.201 7.75 2.5 6.766 2.5 5.25 2.5 2.31 4.863 0 8 0s5.5 2.31 5.5 5.25c0 1.516-.701 2.5-1.328 3.259-.095.115-.184.22-.268.319-.207.245-.383.453-.541.681-.208.3-.33.565-.37.847a.751.751 0 0 1-1.485-.212c.084-.593.337-1.078.621-1.489.203-.292.45-.584.673-.848.075-.088.147-.173.213-.253.561-.679.985-1.32.985-2.304 0-2.06-1.637-3.75-4-3.75ZM5.75 12h4.5a.75.75 0 0 1 0 1.5h-4.5a.75.75 0 0 1 0-1.5ZM6 15.25a.75.75 0 0 1 .75-.75h2.5a.75.75 0 0 1 0 1.5h-2.5a.75.75 0 0 1-.75-.75Z"></path></svg>',
+				class: 'tip',
+				label: 'Tip'
+			},
+			IMPORTANT: {
+				icon: '<svg class="alert-icon" viewBox="0 0 16 16" fill="currentColor"><path d="M0 1.75C0 .784.784 0 1.75 0h12.5C15.216 0 16 .784 16 1.75v9.5A1.75 1.75 0 0 1 14.25 13H8.06l-2.573 2.573A1.458 1.458 0 0 1 3 14.543V13H1.75A1.75 1.75 0 0 1 0 11.25Zm1.75-.25a.25.25 0 0 0-.25.25v9.5c0 .138.112.25.25.25h2a.75.75 0 0 1 .75.75v2.19l2.72-2.72a.749.749 0 0 1 .53-.22h6.5a.25.25 0 0 0 .25-.25v-9.5a.25.25 0 0 0-.25-.25Zm7 2.25v2.5a.75.75 0 0 1-1.5 0v-2.5a.75.75 0 0 1 1.5 0ZM9 9a1 1 0 1 1-2 0 1 1 0 0 1 2 0Z"></path></svg>',
+				class: 'important',
+				label: 'Important'
+			},
+			WARNING: {
+				icon: '<svg class="alert-icon" viewBox="0 0 16 16" fill="currentColor"><path d="M6.457 1.047c.659-1.234 2.427-1.234 3.086 0l6.082 11.378A1.75 1.75 0 0 1 14.082 15H1.918a1.75 1.75 0 0 1-1.543-2.575Zm1.763.707a.25.25 0 0 0-.44 0L1.698 13.132a.25.25 0 0 0 .22.368h12.164a.25.25 0 0 0 .22-.368Zm.53 3.996v2.5a.75.75 0 0 1-1.5 0v-2.5a.75.75 0 0 1 1.5 0ZM9 11a1 1 0 1 1-2 0 1 1 0 0 1 2 0Z"></path></svg>',
+				class: 'warning',
+				label: 'Warning'
+			},
+			CAUTION: {
+				icon: '<svg class="alert-icon" viewBox="0 0 16 16" fill="currentColor"><path d="M0 8a8 8 0 1 1 16 0A8 8 0 0 1 0 8Zm8-6.5a6.5 6.5 0 1 0 0 13 6.5 6.5 0 0 0 0-13ZM6.5 7.75A.75.75 0 0 1 7.25 7h1a.75.75 0 0 1 .75.75v2.75h.25a.75.75 0 0 1 0 1.5h-2a.75.75 0 0 1 0-1.5h.25v-2h-.25a.75.75 0 0 1-.75-.75ZM8 6a1 1 0 1 1 0-2 1 1 0 0 1 0 2Z"></path></svg>',
+				class: 'caution',
+				label: 'Caution'
+			}
+		};
+
+		// アラート判定用パターン。marked の blockquote トークンの text（"> " 除去済み）の
+		// 先頭が [!TYPE] かどうかを判定する。
+		const ALERT_PATTERN = /^\[!(NOTE|TIP|IMPORTANT|WARNING|CAUTION)\]\s*/;
+
+		// GitHub対応絵文字（:name: → Unicode）のマップ。
+		const EMOJI_MAP = {
+			'+1': '\u{1F44D}',
+			'-1': '\u{1F44E}',
+			heart: '\u2764\uFE0F',
+			thumbsup: '\u{1F44D}',
+			thumbsdown: '\u{1F44E}',
+			o: '\u2B55',
+			smile: '\u{1F604}',
+			laughing: '\u{1F606}',
+			weary: '\u{1F629}',
+			sweat_smile: '\u{1F605}',
+			heart_eyes: '\u{1F60D}',
+			joy: '\u{1F602}',
+			kissing: '\u{1F617}',
+			rofl: '\u{1F923}',
+			raised_hands: '\u{1F64C}',
+			partying_face: '\u{1F973}',
+			confused: '\u{1F615}',
+			cold_sweat: '\u{1F630}',
+			cry: '\u{1F622}',
+			crown: '\u{1F451}',
+			eyes: '\u{1F440}',
+			heart_on_fire: '\u2764\uFE0F\u200D\u{1F525}',
+			wastebasket: '\u{1F5D1}',
+			see_no_evil: '\u{1F648}',
+			deaf_person: '\u{1F9CF}',
+			point_up: '\u261D',
+			right_anger_bubble: '\u{1F5EF}',
+			twisted_rightwards_arrows: '\u{1F500}',
+			shield: '\u{1F6E1}\uFE0F',
+			musical_note: '\u{1F3B5}',
+			no_bell: '\u{1F515}',
+			cyclone: '\u{1F300}',
+			monkey: '\u{1F412}'
+		};
+
+		// 絵文字検出用パターン。EMOJI_START は start()（次候補位置の探索）用、
+		// EMOJI_TOKEN は tokenizer 用に先頭アンカーで :name: を切り出す。
+		// 文字クラスは GitHub のショートコードに合わせ - も許可（:+1: / :-1: 対応）。
+		const EMOJI_START = /:[\w+-]+:/;
+		const EMOJI_TOKEN = /^:([\w+-]+):/;
+
+		// 絵文字（:name: → Unicode）を inline tokenizer で独立トークン化する拡張。
+		// text/list/table/リンクテキスト等あらゆるインライン文脈で確実に変換され、
+		// codespan・code（コードブロック）は別レベルのため対象外になる
+		// （コード内の :smile: 等は変換されずに保持される）。
+		// EMOJI_MAP に無い :name: は undefined を返して既定の tokenizer に委譲し、
+		// 元テキストのまま残す。
+		marked.use({
+			extensions: [
+				{
+					name: 'emoji',
+					level: 'inline',
+					start(src) {
+						return src.match(EMOJI_START)?.index;
+					},
+					tokenizer(src) {
+						const match = EMOJI_TOKEN.exec(src);
+						if (!match) return;
+						const emoji = EMOJI_MAP[match[1]];
+						if (!emoji) return;
+						return {
+							type: 'emoji',
+							raw: match[0],
+							emoji
+						};
+					},
+					renderer(token) {
+						return token.emoji;
+					}
+				}
+			]
+		});
+
+		// GitHub アラート記法（> [!NOTE] 等）を marked のトークン処理へ組み込む拡張。
+		// OSS 標準の marked-alert と同様、blockquote トークンを walkTokens で検査して
+		// alert トークンへ変換する。本文パースは marked に委譲するため、アラート内の
+		// コードブロック・インラインコード・複数段落・CRLF が正しく描画される。
+		marked.use({
+			walkTokens(token) {
+				// アラート変換: blockquote の1行目が [!TYPE] のとき alert トークンへ。
+				if (token.type !== 'blockquote') return;
+				const match = token.text.match(ALERT_PATTERN);
+				if (!match) return;
+
+				const alertInfo = ALERT_TYPES[match[1]];
+				token.type = 'alert';
+				token.meta = alertInfo;
+
+				// 先頭の [!TYPE] 表記を本文トークンから取り除く。
+				// 1行目の段落トークンを見つけ、その raw/text と最初の子テキストを削る。
+				const firstChild = token.tokens?.[0];
+				if (firstChild && firstChild.type === 'paragraph') {
+					firstChild.raw = firstChild.raw.replace(ALERT_PATTERN, '');
+					firstChild.text = firstChild.text.replace(ALERT_PATTERN, '');
+					const inner = firstChild.tokens?.[0];
+					if (inner && inner.type === 'text') {
+						inner.raw = inner.raw.replace(ALERT_PATTERN, '');
+						inner.text = inner.text.replace(ALERT_PATTERN, '');
+					}
+					// 表記直後の改行トークン（breaks:true で入る <br>）を除去。
+					if (firstChild.tokens?.[1] && firstChild.tokens[1].type === 'br') {
+						firstChild.tokens.splice(1, 1);
+					}
+					// 1行目が空になった場合は段落トークンごと削除。
+					if (firstChild.text === '') {
+						token.tokens.shift();
+					}
+				}
+			},
+			extensions: [
+				{
+					name: 'alert',
+					level: 'block',
+					// walkTokens で type を 'alert' に差し替えるだけで tokenizer は不要。
+					// renderer は既存の <div class="markdown-alert ..."> 構造を踏襲する。
+					renderer(token) {
+						const alertInfo = token.meta;
+						const body = this.parser.parse(token.tokens);
+						return `<div class="markdown-alert markdown-alert-${alertInfo.class}">
+<div class="markdown-alert-title">${alertInfo.icon}${alertInfo.label}</div>
+${body}</div>\n`;
+					}
+				}
+			]
+		});
+
+		// DOMPurify 設定（XSS 対策）
+		// marked が生成する HTML と、alert 拡張の renderer が組み立てる
+		// アラート div / SVG アイコン / details・summary を保持しつつ、
+		// script や on* 属性など危険な要素・属性を除去する。
+		// USE_PROFILES で HTML と SVG を許可する。
+		// ADD_ATTR のフットノート data-* は、DOMPurify がデフォルト（ALLOW_DATA_ATTR:true）で
+		// 全 data-* を許可するため実際には冗長だが、意図を明示し将来 ALLOW_DATA_ATTR を
+		// 無効化した場合の保険として残す。
+		const SANITIZE_CONFIG = {
+			USE_PROFILES: { html: true, svg: true },
+			ADD_ATTR: ['data-footnoteref', 'data-footnotebackref']
+		};
+
+		// Markdown -> サニタイズ済み HTML の共通レンダリングパイプライン。
+		// 1. 改行を LF に正規化（CRLF/CR を混入させても marked が正しく処理できるように）
+		// 2. marked.parse: アラート（alert 拡張）・絵文字（emoji 拡張）・mermaid（code renderer）・
+		//    フットノートを含めて全体を Markdown としてパース
+		// 3. DOMPurify.sanitize: 危険な要素・属性を除去（最終段で一度だけ実行）
+		function renderMarkdown(markdown) {
+			const normalized = markdown.replace(/\r\n?/g, '\n');
+			const rawHtml = marked.parse(normalized);
+			return DOMPurify.sanitize(rawHtml, SANITIZE_CONFIG);
+		}
+
+		function updatePreview() {
+			const markdown = document.getElementById('markdown-input').value;
+			const preview = document.getElementById('preview');
+
+			// Markdown パース -> サニタイズ（共通パイプライン）。
+			// アラート・絵文字・mermaid・フットノートの変換は marked 内に統合済み。
+			preview.innerHTML = renderMarkdown(markdown);
+
+			// シンタックスハイライトはパース後に一括適用する。
+			// （marked の highlight callback は使わない。アラート内コードは二重 parse されるため、
+			//  DOM 生成後に highlight.js を適用する方式に統一している。）
+			// mermaid 図は <pre class="mermaid">（code 要素なし）なのでこのセレクタに掛からず、
+			// ハイライトと描画が競合しない。
+			preview.querySelectorAll('pre code').forEach((block) => {
+				hljs.highlightElement(block);
+			});
+
+			// Mermaid 図を描画する（sanitize 済み DOM に対して後段で実行）。
+			// mermaid は ESM 非同期ロードのため window.mermaidReady を待つ。
+			renderMermaid(preview);
+		}
+
+		// プレビュー内の <pre class="mermaid"> を SVG へ描画する。
+		// - mermaid のロード完了（window.mermaidReady）を待ってから実行。
+		// - suppressErrors:true で、入力途中の不完全な図があってもクラッシュさせない。
+		// - 各 updatePreview で innerHTML が再生成され data-processed が付いていないため、
+		//   run() は毎回すべての .mermaid を描画し直す。
+		function renderMermaid(container) {
+			if (!container.querySelector('.mermaid')) return;
+			window.mermaidReady.then((mermaid) => {
+				mermaid.run({
+					nodes: container.querySelectorAll('.mermaid'),
+					suppressErrors: true
+				});
+			});
+		}
+
+		function escapeHtml(str) {
+			return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+		}
+
+		function exportHTML() {
+			const markdown = document.getElementById('markdown-input').value;
+			const html = generateFullHTML(markdown);
+
+			// 最初の見出し(h1)を取得してファイル名にする
+			let filename = 'preview.html';
+			const h1Match = markdown.match(/^#\s+(.+)$/m);
+			if (h1Match) {
+				// ファイル名として使えない文字を置き換え
+				filename = `${h1Match[1].replace(/[<>:"/\\|?*\x00-\x1f]/g, '-').replace(/\s+/g, '-')}.html`;
+			}
+
+			const blob = new Blob([html], { type: 'text/html' });
+			const url = URL.createObjectURL(blob);
+			const a = document.createElement('a');
+			a.href = url;
+			a.download = filename;
+			a.click();
+			URL.revokeObjectURL(url);
+		}
+
+		function generateFullHTML(markdown) {
+			// NOTE: Export ではフットノートの HTML はマーク時のレンダリング結果のみ
+			// マウス操作（ジャンプ/戻り）は機能しません（pre-rendered なので再処理されないため）
+			// 本文はビルド時に renderMarkdown 内で DOMPurify によりサニタイズ済みのため、
+			// エクスポート先 HTML に DOMPurify を同梱する必要はない。
+			const content = renderMarkdown(markdown);
+
+			// タイトルを取得
+			let title = 'Markdown Preview';
+			const h1Match = markdown.match(/^#\s+(.+)$/m);
+			if (h1Match) {
+				title = escapeHtml(h1Match[1]);
+			}
+
+			return `
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+	<meta charset="UTF-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+	<title>${title}</title>
+	<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"><\/script>
+	<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github.min.css">
+	<script src="https://cdn.jsdelivr.net/npm/marked-footnote@1.4.0/dist/index.umd.min.js"><\/script>
+	<script type="module">
+		import mermaid from "https://cdn.jsdelivr.net/npm/mermaid@11.16.0/dist/mermaid.esm.min.mjs";
+
+		mermaid.initialize({ startOnLoad: false, theme: 'default' });
+		window.mermaid = mermaid;
+		window.dispatchEvent(new Event('mermaid:ready'));
+	<\/script>
+    <style>
+        body {
+            margin: 0;
+            padding: 32px;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans', Helvetica, Arial, sans-serif;
+            font-size: 14px;
+            line-height: 1.6;
+            background: #ffffff;
+            color: #24292f;
+        }
+        .content {
+            max-width: 1012px;
+            margin: 0 auto;
+        }
+        h1, h2, h3, h4, h5, h6 {
+            font-weight: 600;
+            line-height: 1.25;
+            margin-top: 24px;
+            margin-bottom: 16px;
+        }
+        h1 {
+            font-size: 2em;
+            border-bottom: 1px solid #d8dee4;
+            padding-bottom: 0.3em;
+            margin-top: 0;
+        }
+        h2 {
+            font-size: 1.5em;
+            border-bottom: 1px solid #d8dee4;
+            padding-bottom: 0.3em;
+        }
+        h3 { font-size: 1.25em; }
+        h4 { font-size: 1em; }
+        h5 { font-size: 0.875em; }
+        h6 { font-size: 0.85em; color: #57606a; }
+        p { margin-top: 0; margin-bottom: 16px; }
+        code {
+            background: rgba(175,184,193,0.2);
+            padding: 0.2em 0.4em;
+            border-radius: 6px;
+            font-family: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace;
+            font-size: 85%;
+            color: #24292f;
+        }
+        pre {
+            background: #f6f8fa;
+            padding: 16px;
+            border-radius: 6px;
+            overflow-x: auto;
+            margin: 16px 0;
+            border: 1px solid #d0d7de;
+            line-height: 1.45;
+        }
+        pre code { 
+            background: none; 
+            padding: 0; 
+            border-radius: 0;
+            font-size: 100%;
+            color: #24292f;
+            display: block;
+        }
+        pre code.hljs {
+            background: transparent;
+            padding: 0;
+        }
+        blockquote {
+            margin: 0 0 16px 0;
+            padding: 0 1em;
+            border-left: 0.25em solid #d0d7de;
+            color: #57606a;
+        }
+        ul, ol { padding-left: 2em; margin-top: 0; margin-bottom: 16px; }
+        li { margin-top: 0.25em; position: relative; }
+        li + li { margin-top: 0.25em; }
+        a { color: #0969da; text-decoration: none; }
+        a:hover { text-decoration: underline; }
+        img { max-width: 100%; height: auto; background-color: #ffffff; }
+        table {
+            border-collapse: collapse;
+            border-spacing: 0;
+            width: auto;
+            margin: 16px 0;
+        }
+        table th, table td {
+            border: 1px solid #d0d7de;
+            padding: 6px 13px;
+        }
+        table th {
+            background: #f6f8fa;
+            font-weight: 600;
+        }
+        table tr {
+            background: #ffffff;
+            border-top: 1px solid #d0d7de;
+        }
+        table tr:nth-child(2n) {
+            background: #f6f8fa;
+        }
+        hr {
+            border: none;
+            border-bottom: 1px solid #d8dee4;
+            height: 0.25em;
+            background: transparent;
+            margin: 24px 0;
+        }
+        strong { font-weight: 600; }
+        em { font-style: italic; }
+        del { text-decoration: line-through; }
+        input[type="checkbox"] {
+            appearance: none;
+            width: 16px;
+            height: 16px;
+            margin: 0 0 0 0;
+            border: 1px solid #d0d7de;
+            border-radius: 4px;
+            background-color: #ffffff;
+            position: relative;
+            top: 2px;
+            cursor: pointer;
+        }
+        input[type="checkbox"]:checked {
+            background-color: #0969da;
+            border-color: #0969da;
+            background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 16 16' fill='%23ffffff' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M12.207 4.793a1 1 0 010 1.414l-5 5a1 1 0 01-1.414 0l-2-2a1 1 0 011.414-1.414L6.5 9.086l4.293-4.293a1 1 0 011.414 0z'/%3E%3C/svg%3E");
+            background-size: 16px;
+            background-position: center;
+            background-repeat: no-repeat;
+        }
+        li input[type="checkbox"] {
+            position: absolute;
+            left: -24px;
+            top: 4px;
+        }
+        .markdown-alert {
+            padding: 8px 16px;
+            margin-bottom: 16px;
+            border-left: 4px solid;
+            border-radius: 0;
+        }
+        .markdown-alert > *:last-child {
+            margin-bottom: 0;
+        }
+        .markdown-alert-note {
+            border-color: #0969da;
+        }
+        .markdown-alert-tip {
+            border-color: #1a7f37;
+        }
+        .markdown-alert-important {
+            border-color: #8250df;
+        }
+        .markdown-alert-warning {
+            border-color: #9a6700;
+        }
+        .markdown-alert-caution {
+            border-color: #d1242f;
+        }
+        .markdown-alert-title {
+            display: flex;
+            align-items: center;
+            font-weight: 500;
+            font-size: 14px;
+            margin-bottom: 8px;
+            line-height: 1;
+        }
+        .markdown-alert-note .markdown-alert-title {
+            color: #0969da;
+        }
+        .markdown-alert-tip .markdown-alert-title {
+            color: #1a7f37;
+        }
+        .markdown-alert-important .markdown-alert-title {
+            color: #8250df;
+        }
+        .markdown-alert-warning .markdown-alert-title {
+            color: #9a6700;
+        }
+        .markdown-alert-caution .markdown-alert-title {
+            color: #d1242f;
+        }
+        .markdown-alert-title .alert-icon {
+            margin-right: 8px;
+            display: inline-block;
+            width: 16px;
+            height: 16px;
+        }
+
+        /* Collapsible Details/Summary */
+        details { margin-bottom: 16px; }
+        summary { cursor: pointer; }
+
+        /* Footnote */
+        [data-footnoteref] { color: #0969da; text-decoration: none; }
+        [data-footnoteref]:hover { text-decoration: underline; }
+        [data-footnoteref]::before { content: '['; }
+        [data-footnoteref]::after { content: ']'; }
+        .footnotes { margin-top: 24px; padding-top: 24px; border-top: 1px solid #d8dee4; font-size: 0.85em; color: #57606a; }
+        .footnotes ol { list-style-type: none; padding-left: 0; margin: 0; counter-reset: footnote-counter; }
+        .footnotes ol li { counter-increment: footnote-counter; margin-bottom: 8px; position: relative; padding-left: 1.5em; }
+        .footnotes ol li::before { content: counter(footnote-counter) ". "; position: absolute; left: 0; font-weight: 600; }
+        .footnotes ol li p { margin: 0; display: inline; }
+        [data-footnotebackref] { color: #0969da; text-decoration: none; font-size: 0.8em; vertical-align: super; margin-left: 4px; }
+        [data-footnotebackref]:hover { text-decoration: underline; }
+        .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; overflow: hidden; clip: rect(0,0,0,0); word-wrap: normal; border: 0; }
+        .mermaid { background: transparent; border: none; padding: 0; margin: 16px 0; text-align: center; overflow-x: auto; line-height: normal; }
+        .mermaid svg { max-width: 100%; height: auto; }
+        </style>
+</head>
+<body>
+    <div class="content">
+	${content}
+    </div>
+    <script>
+        // ページ読み込み後にシンタックスハイライトを適用
+        document.addEventListener('DOMContentLoaded', () => {
+            document.querySelectorAll('pre code').forEach((block) => {
+                hljs.highlightElement(block);
+            });
+        });
+
+        // Mermaid 図を描画する。
+        // mermaid は ESM で非同期ロードされるため、window.mermaid が未定義なら
+        // 'mermaid:ready' イベントを待ってから run() する。
+        // suppressErrors:true でパースエラー時もページ全体を止めない。
+        (function () {
+            const runMermaid = () => {
+                if (!document.querySelector('.mermaid')) return;
+                window.mermaid.run({ querySelector: '.mermaid', suppressErrors: true });
+            };
+            if (window.mermaid) {
+                runMermaid();
+            } else {
+                window.addEventListener('mermaid:ready', runMermaid, { once: true });
+            }
+        })();
+    <\/script>
+</body>
+</html>`;
+		}
+
+		// 初期プレビュー表示 + 行番号の初期化
+		const editorInput = document.getElementById('markdown-input');
+		const lineNumbersEl = document.getElementById('line-numbers');
+		let currentLineCount = 0;
+
+		function renderLineNumbers() {
+			const lines = editorInput.value.split('\n').length;
+			if (lines === currentLineCount) return;
+			currentLineCount = lines;
+			lineNumbersEl.innerHTML = Array.from({ length: lines }, (_, i) => `<div class="line-number">${i + 1}</div>`).join('');
+		}
+
+		updatePreview();
+		renderLineNumbers();
+
+		// Debounce utility
+		function debounce(fn, delay) {
+			let timer;
+			return (...args) => {
+				clearTimeout(timer);
+				timer = setTimeout(() => fn(...args), delay);
+			};
+		}
+
+		// リアルタイムプレビュー + 行番号更新（debounce適用）
+		editorInput.addEventListener('input', () => {
+			renderLineNumbers(); // 行番号は即時更新
+			debouncedUpdatePreview();
+		});
+
+		const debouncedUpdatePreview = debounce(updatePreview, 300);
+
+		editorInput.addEventListener('scroll', () => {
+			lineNumbersEl.scrollTop = editorInput.scrollTop;
+		});
+	</script>
+</body>
+</html>
