@@ -1,0 +1,22 @@
+{
+	"$schema": "https://biomejs.dev/schemas/2.5.4/schema.json",
+	"files": {
+		"includes": ["**", "!.git"]
+	},
+	"overrides": [
+		{
+			"includes": ["**/*.html"],
+			"linter": {
+				"rules": {
+					"correctness": {
+						"noUnusedVariables": "off"
+					},
+					"suspicious": {
+						"noControlCharactersInRegex": "off",
+						"noUselessEscapeInString": "off"
+					}
+				}
+			}
+		}
+	]
+}
