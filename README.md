@@ -7,7 +7,7 @@
 
 - リアルタイムの分割画面エディタとプレビュー
 - GitHub Flavored Markdown (GFM) のサポート
-- シンタックスハイライティング付きコードブロック（highlight.js 11.9.0）
+- シンタックスハイライティング付きコードブロック（highlight.js）
 - GitHub スタイルのアラート（`> [!NOTE]`, `> [!TIP]`, `> [!IMPORTANT]`, `> [!WARNING]`, `> [!CAUTION]`）
 - フットノート（`[^1]` 記法 → 脚注 + バックリンク）
 - 折りたたみセクション（`<details>`/`<summary>` に GitHub 風トグルアイコンスタイル）
@@ -25,11 +25,11 @@
 
 すべての依存関係はCDN経由で読み込まれます：
 
-- [marked 9.1.6](https://github.com/markedjs/marked) — Markdownパーサー
-- [highlight.js 11.9.0](https://highlightjs.org/) — シンタックスハイライティング（JS + github テーマCSS）
-- [marked-footnote 1.4.0](https://www.npmjs.com/package/marked-footnote) — フットノート拡張
-- [DOMPurify 3.4.8](https://github.com/cure53/DOMPurify) — HTMLサニタイズ（XSS対策）
-- [mermaid 11.16.0](https://mermaid.js.org/) — ダイアグラム描画（ESM）
+- [marked](https://github.com/markedjs/marked) — Markdownパーサー
+- [highlight.js](https://highlightjs.org/) — シンタックスハイライティング（JS + github テーマCSS）
+- [marked-footnote](https://www.npmjs.com/package/marked-footnote) — フットノート拡張
+- [DOMPurify](https://github.com/cure53/DOMPurify) — HTMLサニタイズ（XSS対策）
+- [mermaid](https://mermaid.js.org/) — ダイアグラム描画（ESM）
 
 ## ライセンス
 
