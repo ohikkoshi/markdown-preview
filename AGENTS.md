@@ -8,9 +8,10 @@ Single-file GitHub Flavored Markdown preview tool. **All code lives in `markdown
 - Autofix: `biome check --write markdown-preview.html`.
 - Indentation is **tabs** (Biome default). Note the exported-HTML template literal in `generateFullHTML` is intentionally space-indented; leave it as-is.
 - `biome.json` disables `noUnusedVariables`, `noControlCharactersInRegex`, and `noUselessEscapeInString` for `*.html` — do not re-enable via inline changes.
+- No test runner, no CI, no `package.json` — verification is `biome check` plus opening the file in a browser. Do not hunt for a test command.
 
-## Dependencies (CDN, version-pinned)
-Loaded from cdnjs/jsdelivr in `<head>`; there is no local vendoring. Versions are pinned and duplicated in `README.md` — if you change a version, update both the `<head>` script tags and README, and also the copy inside `generateFullHTML` (see below). Current: marked 9.1.6, highlight.js 11.9.0, marked-footnote 1.4.0, DOMPurify 3.4.8, mermaid 11.16.0 (ESM). marked 9's `renderer.code(code, infostring)` signature is assumed; a marked major bump will break the custom code renderer and alert extension.
+## Dependencies (CDN, `@latest`)
+All loaded from jsDelivr `@latest` in `<head>`; there is no local vendoring and no version pinning. The same dependency set (minus DOMPurify/marked, which export omits on purpose) is re-declared inside `generateFullHTML` (see below). If you change a URL, update both the `<head>` script tags and the copy inside `generateFullHTML`. Current: marked (jsDelivr `@latest`), highlight.js via `@highlightjs/cdn-assets@latest` (classic script that publishes the `hljs` global), marked-footnote `@latest` (UMD, `window.markedFootnote`, `peerDeps marked >=7.0.0`), DOMPurify `@latest` (UMD, `window.DOMPurify` + `dist/purify.min.js`), mermaid `@latest` (ESM `mermaid.esm.min.mjs`). marked's custom `renderer.code` uses the **object** signature `code({ text, lang })` (marked >= v13); the positional `code(code, infostring)` (marked <= v9) was removed when `@latest` was adopted, so a further marked major bump can still break the renderer — keep an eye on `code({ text, lang })` and the `false` fallback.
 
 ## Render pipeline (order matters)
 `renderMarkdown()` is the single source of truth: normalize CRLF→LF → `marked.parse` → `DOMPurify.sanitize`. After injecting HTML, `updatePreview()` then applies, in this exact order:
@@ -18,11 +19,12 @@ Loaded from cdnjs/jsdelivr in `<head>`; there is no local vendoring. Versions ar
 2. `hljs.highlightElement` on `pre code` — applied to the built DOM, **not** via marked's highlight callback (alert bodies get re-parsed, so post-DOM highlighting avoids double work). Do not switch to a marked highlight callback.
 3. `renderMermaid()` — mermaid is loaded as async ESM; it awaits `window.mermaidReady` before `mermaid.run(... suppressErrors:true)`. Mermaid blocks render as `<pre class="mermaid">` (no `code` child) so they deliberately skip the highlight selector.
 
-The custom `renderer.code` handles only ```` ```mermaid ````; for any other language it returns `false` on purpose to fall back to marked's default code renderer (the `marked.use` fallback mechanism). Returning a string for non-mermaid would bypass the `pre code` highlight path — keep the `false` return.
+The custom `renderer.code({ text, lang })` handles only ```` ```mermaid ````; for any other language it returns `false` on purpose to fall back to marked's default code renderer (the `marked.use` fallback mechanism). Returning a string for non-mermaid would bypass the `pre code` highlight path — keep the `false` return.
 
 ## Custom features (where to edit)
 - Emoji shortcodes: `EMOJI_MAP` + `EMOJI_START`/`EMOJI_TOKEN`; implemented as an inline `emoji` tokenizer extension (`level:'inline'`), not `walkTokens`. Because it is inline-level, `code`/`codespan` are untouched, so `:name:` inside code stays literal.
 - GitHub alerts (`> [!NOTE]` etc.): `ALERT_TYPES` (SVG icon/class/label) + `ALERT_PATTERN`, converted from `blockquote` tokens via a `walkTokens` + `alert` extension.
+- `<details>`/`<summary>` use the native browser toggle (only `cursor: pointer` + margin CSS at `.preview-content details`/`summary`); no JS extension is attached.
 - Sanitize allowlist: `SANITIZE_CONFIG` (`USE_PROFILES` html+svg, plus `ADD_ATTR` for footnote `data-*`). New HTML output that DOMPurify would strip must be allowlisted here or it silently disappears from the preview.
 
 ## The dual-template gotcha (read before large edits)
