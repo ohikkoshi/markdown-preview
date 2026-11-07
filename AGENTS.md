@@ -19,6 +19,7 @@ All loaded from jsDelivr `@latest` in `<head>`; there is no local vendoring and 
 ## Render pipeline (order matters)
 
 `renderMarkdown()` is the single source of truth (called by both `updatePreview` and `generateFullHTML`): normalize CRLF→LF → `marked.parse` (runs the custom extensions below) → `DOMPurify.sanitize`. `updatePreview()` injects that sanitized HTML, then applies, in this exact order:
+
 1. `hljs.highlightElement` on `pre code` — applied to the built DOM, **not** via marked's highlight callback (alert bodies get re-parsed, so post-DOM highlighting avoids double work). Do not switch to a marked highlight callback.
 2. `renderMermaid()` — mermaid is loaded as async ESM; it awaits `window.mermaidReady` before `mermaid.run(... suppressErrors:true)`. Mermaid blocks render as `<pre class="mermaid">` (no `code` child) so they deliberately skip the highlight selector.
 
@@ -34,6 +35,7 @@ The custom `renderer.code({ text, lang })` handles only ` ```mermaid `; for any 
 ## The dual-template gotcha (read before large edits)
 
 `markdown-preview.html` contains two embedded documents inside string literals, so grep/line reasoning is misleading:
+
 - The `<textarea id="markdown-input">` holds the **default sample markdown** (headings, `hello()`, mermaid diagrams, etc.). That inner `<body>`/`function`/code is content, not app code.
 - `generateFullHTML(markdown)` contains a **complete standalone HTML document** as a template literal used by the Export button. It **re-declares its own CSS and its own highlight.js/mermaid loader** (`</script>` escaped as `<\/script>`). Styling or dependency changes meant to affect exported files must be made here too; the live preview CSS/JS and the export template are separate copies that can drift.
 

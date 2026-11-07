@@ -24,6 +24,7 @@
 ## 依存関係
 
 すべての依存関係はCDN経由で読み込まれます：
+
 - [marked](https://github.com/markedjs/marked) — Markdownパーサー
 - [highlight.js](https://highlightjs.org/) — シンタックスハイライティング（JS + github テーマCSS）
 - [marked-footnote](https://www.npmjs.com/package/marked-footnote) — フットノート拡張
